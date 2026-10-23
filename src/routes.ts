@@ -1,4 +1,4 @@
-export const SITE_NAME = 'みんなのTierMaker';
+export const SITE_NAME = '学マスTierMaker';
 
 export const routes = {
   home: '/',
