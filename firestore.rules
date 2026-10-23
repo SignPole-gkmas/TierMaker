@@ -1,0 +1,33 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ログイン不要で誰でも閲覧・作成・投票・候補追加ができる（参照元と同じ運用）。
+    // その代わり、形の崩れたデータや削除・タイトル改ざんはルールで弾く。
+    match /threads/{threadId} {
+      function validCharacters(chars) {
+        return chars is list && chars.size() >= 2 && chars.size() <= 300;
+      }
+
+      allow read: if true;
+
+      allow create: if request.resource.data.keys().hasOnly(['title', 'description', 'characters', 'createdAt', 'updatedAt'])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 100
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 500
+        && validCharacters(request.resource.data.characters)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      // 投票（characters のレート変更）と回答候補の追加（characters の末尾追加）のみ許可。
+      // 候補を減らす更新は不可。
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['characters', 'updatedAt'])
+        && validCharacters(request.resource.data.characters)
+        && request.resource.data.characters.size() >= resource.data.characters.size()
+        && request.resource.data.updatedAt == request.time;
+
+      allow delete: if false;
+    }
+  }
+}
