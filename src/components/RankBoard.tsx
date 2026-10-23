@@ -35,7 +35,7 @@ export default function RankBoard({ thread }: { thread: Thread }) {
                 >
                   {c.name}
                   <Box component="span" sx={{ ml: 0.75, fontSize: 11, color: 'text.secondary' }}>
-                    {c.rating.toFixed(1)}
+                    {Math.round(c.rating)}
                   </Box>
                 </Box>
               ))}

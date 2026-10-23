@@ -29,31 +29,41 @@ export const parseNames = (text: string): string[] =>
 
 export type Rank = { label: string; characters: Character[] };
 
-/** 最高レートを 10.0 点に正規化し、点数帯で S〜E ランクに振り分ける */
+/**
+ * レートの値で固定の帯に振り分ける。平均（初期レート 1500）が B と C の境目になる。
+ * 1 位を 10 点とする比率方式だと平均付近に全員が集まり D・E が埋まらないため、この方式にしている。
+ */
+export const RANK_BANDS = [
+  { label: 'Sランク', min: 1700 },
+  { label: 'Aランク', min: 1600 },
+  { label: 'Bランク', min: 1500 },
+  { label: 'Cランク', min: 1400 },
+  { label: 'Dランク', min: 1300 },
+  { label: 'Eランク', min: -Infinity },
+];
+
 export const toRanks = (characters: Character[]): Rank[] => {
   if (characters.length === 0) return [];
-  const max = Math.max(...characters.map((c) => c.rating));
-  const scored = [...characters]
-    .sort((a, b) => b.rating - a.rating)
-    .map((c) => ({ ...c, rating: max > 0 ? Math.round((c.rating / max) * 100) / 10 : 0 }));
-  const band = (label: string, lower: number, upper: number) => ({
-    label,
-    characters: scored.filter((c) => c.rating > lower && c.rating <= upper),
+  const sorted = [...characters].sort((a, b) => b.rating - a.rating);
+  return RANK_BANDS.map((band, i) => {
+    const upper = i === 0 ? Infinity : RANK_BANDS[i - 1].min;
+    return { label: band.label, characters: sorted.filter((c) => c.rating >= band.min && c.rating < upper) };
   });
-  return [
-    band('Sランク', 9, Infinity),
-    band('Aランク', 8, 9),
-    band('Bランク', 7, 8),
-    band('Cランク', 6, 7),
-    band('Dランク', 5, 6),
-    band('Eランク', -Infinity, 5),
-  ];
 };
 
+/** この差で選ばれやすさが半分になる。小さいほどレートの近い相手に偏る */
+const MATCH_SCALE = 100;
+
+/**
+ * 1 人目は完全ランダム、2 人目はレートが近いほど選ばれやすい重み付きランダムで選ぶ。
+ * 重みは差が開くほどなだらかに下がるだけで 0 にはならないため、格差のある対戦もときどき起きる。
+ */
 export const pickPair = (characters: Character[]): [string, string] | null => {
   if (characters.length < 2) return null;
-  const i = Math.floor(Math.random() * characters.length);
-  let j = Math.floor(Math.random() * (characters.length - 1));
-  if (j >= i) j++;
-  return [characters[i].name, characters[j].name];
+  const first = characters[Math.floor(Math.random() * characters.length)];
+  const others = characters.filter((c) => c !== first);
+  const weights = others.map((c) => 1 / (1 + ((c.rating - first.rating) / MATCH_SCALE) ** 2));
+  let t = Math.random() * weights.reduce((a, b) => a + b, 0);
+  const second = others.find((_, i) => (t -= weights[i]) < 0) ?? others[others.length - 1];
+  return Math.random() < 0.5 ? [first.name, second.name] : [second.name, first.name];
 };

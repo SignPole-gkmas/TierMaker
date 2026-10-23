@@ -46,7 +46,7 @@ export default function AddCandidatesForm({ threadId, onAdded }: Props) {
           margin="dense"
           multiline
           minRows={3}
-          helperText="追加した候補は平均的な点数から始まります。"
+          helperText="追加した候補は平均のレート（1500）から始まります。"
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
