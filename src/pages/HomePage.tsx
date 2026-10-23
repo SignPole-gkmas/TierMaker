@@ -5,6 +5,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import Loading, { ErrorMessage, SectionTitle } from '../components/Loading';
 import { fetchThreads } from '../threads';
+import { errorMessage } from '../errors';
 import { routes } from '../routes';
 import type { Thread } from '../types';
 
@@ -14,7 +15,7 @@ const useThreads = (orderByColumn: 'createdAt' | 'updatedAt', max: number) => {
   useEffect(() => {
     fetchThreads(orderByColumn, max)
       .then(setThreads)
-      .catch(() => setError('キャラランクの読み込みに失敗しました。'));
+      .catch((e) => setError(errorMessage(e, 'キャラランクの読み込み')));
   }, [orderByColumn, max]);
   return { threads, error };
 };

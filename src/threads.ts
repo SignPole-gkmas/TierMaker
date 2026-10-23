@@ -9,18 +9,68 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { INITIAL_RATING, MAX_CHARACTERS, applyVote } from './rating';
+import { INITIAL_RATING, MAX_CHARACTERS, applyVotes, type Vote } from './rating';
 import type { Character, Thread, ThreadData } from './types';
 
 const THREADS = 'threads';
 
 const toThread = (id: string, data: ThreadData): Thread => ({ ...data, id });
 
+// トップページの一覧は開くたびに最大 35 件読み取るため、数分間ブラウザに覚えさせて読み取り回数を抑える
+const LIST_CACHE_MS = 3 * 60 * 1000;
+const LIST_CACHE_PREFIX = 'tiermaker:threads:';
+
+type CachedThread = Omit<Thread, 'createdAt' | 'updatedAt'> & { createdAt: number | null; updatedAt: number | null };
+
+const readListCache = (key: string): Thread[] | null => {
+  try {
+    const cached = JSON.parse(localStorage.getItem(key) ?? 'null') as { at: number; threads: CachedThread[] } | null;
+    if (!cached || Date.now() - cached.at > LIST_CACHE_MS) return null;
+    return cached.threads.map((t) => ({
+      ...t,
+      createdAt: t.createdAt === null ? null : Timestamp.fromMillis(t.createdAt),
+      updatedAt: t.updatedAt === null ? null : Timestamp.fromMillis(t.updatedAt),
+    }));
+  } catch {
+    return null;
+  }
+};
+
+const writeListCache = (key: string, threads: Thread[]) => {
+  try {
+    const slim: CachedThread[] = threads.map((t) => ({
+      ...t,
+      characters: [], // 一覧では使わないので保存しない
+      createdAt: t.createdAt?.toMillis() ?? null,
+      updatedAt: t.updatedAt?.toMillis() ?? null,
+    }));
+    localStorage.setItem(key, JSON.stringify({ at: Date.now(), threads: slim }));
+  } catch {
+    // 保存できなくても毎回読み取るだけなので無視する
+  }
+};
+
+const clearListCache = () => {
+  try {
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith(LIST_CACHE_PREFIX))
+      .forEach((k) => localStorage.removeItem(k));
+  } catch {
+    // 同上
+  }
+};
+
 export const fetchThreads = async (orderByColumn: 'createdAt' | 'updatedAt', max: number): Promise<Thread[]> => {
+  const key = `${LIST_CACHE_PREFIX}${orderByColumn}:${max}`;
+  const cached = readListCache(key);
+  if (cached) return cached;
   const snap = await getDocs(query(collection(db, THREADS), orderBy(orderByColumn, 'desc'), limit(max)));
-  return snap.docs.map((d) => toThread(d.id, d.data() as ThreadData));
+  const threads = snap.docs.map((d) => toThread(d.id, d.data() as ThreadData));
+  writeListCache(key, threads);
+  return threads;
 };
 
 export const fetchThread = async (id: string): Promise<Thread | null> => {
@@ -36,20 +86,21 @@ export const createThread = async (title: string, description: string, names: st
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+  clearListCache(); // 作ったランクがすぐ一覧に出るようにする
   return ref.id;
 };
 
 /**
- * 投票を反映する。参照元は get → update だったが、同時投票で結果が
- * 上書きされないようトランザクションで読み書きする。
+ * 溜まった投票をまとめて 1 回の読み書きで反映する。同時投票で結果が
+ * 上書きされないようトランザクションにし、最新のレートに対して順に適用する。
  */
-export const vote = (id: string, winner: string, loser: string): Promise<Thread> =>
+export const sendVotes = (id: string, votes: Vote[]): Promise<Thread> =>
   runTransaction(db, async (tx) => {
     const ref = doc(db, THREADS, id);
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error('キャラランクが見つかりません。');
     const data = snap.data() as ThreadData;
-    const characters = applyVote(data.characters, winner, loser);
+    const characters = applyVotes(data.characters, votes);
     tx.update(ref, { characters, updatedAt: serverTimestamp() });
     return toThread(id, { ...data, characters });
   });

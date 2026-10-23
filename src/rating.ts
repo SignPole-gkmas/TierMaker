@@ -23,6 +23,11 @@ export const applyVote = (characters: Character[], winner: string, loser: string
   );
 };
 
+export type Vote = { winner: string; loser: string };
+
+export const applyVotes = (characters: Character[], votes: Vote[]): Character[] =>
+  votes.reduce((chars, v) => applyVote(chars, v.winner, v.loser), characters);
+
 /** 改行区切りの入力を、前後空白除去・空行除去・重複除去した名前リストにする */
 export const parseNames = (text: string): string[] =>
   [...new Set(text.split('\n').map((s) => s.trim()))].filter((s) => s);
