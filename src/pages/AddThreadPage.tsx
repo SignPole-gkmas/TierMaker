@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { Box, Button, TextField, Typography } from '@mui/material';
 import { ErrorMessage } from '../components/Loading';
+import ImportCandidates from '../components/ImportCandidates';
 import { MAX_CHARACTERS, parseNames } from '../rating';
 import { createThread } from '../threads';
 import { routes } from '../routes';
@@ -12,9 +13,19 @@ type FormValues = { title: string; description: string; charactersStr: string };
 const defaultValues: FormValues = { title: '', description: '', charactersStr: '' };
 
 export default function AddThreadPage() {
-  const { register, reset, handleSubmit, formState } = useForm<FormValues>({ defaultValues });
+  const { register, reset, handleSubmit, formState, getValues, setValue } = useForm<FormValues>({ defaultValues });
   const [errorMsg, setErrorMsg] = useState('');
+  const [importMsg, setImportMsg] = useState('');
   const navigate = useNavigate();
+
+  // 読み込んだ名前は入力済みのキャラクターの後ろに足す（同じ名前は足さない）
+  const onImport = (names: string[]) => {
+    const current = parseNames(getValues('charactersStr'));
+    const added = names.filter((n) => !current.includes(n));
+    setValue('charactersStr', [...current, ...added].join('\n'));
+    const skipped = names.length - added.length;
+    setImportMsg(`${added.length}件読み込みました${skipped ? `（入力済みの${skipped}件は除外）` : ''}。`);
+  };
 
   const onSubmit = async (values: FormValues) => {
     const errors: string[] = [];
@@ -51,15 +62,21 @@ export default function AddThreadPage() {
         margin="dense"
         multiline
         minRows={8}
-        helperText="あとから追加することもできます。"
+        helperText={importMsg || 'あとから追加することもできます。'}
+        slotProps={{ inputLabel: { shrink: true } }}
         {...register('charactersStr')}
       />
+      <ImportCandidates onImport={onImport} />
       {errorMsg && <ErrorMessage message={errorMsg} />}
       <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
         <Button type="submit" variant="contained" disabled={formState.isSubmitting}>
           作成
         </Button>
-        <Button color="inherit" onClick={() => window.confirm('入力内容を消しますか？') && reset()}>
+        <Button color="inherit" onClick={() => {
+            if (!window.confirm('入力内容を消しますか？')) return;
+            reset();
+            setImportMsg('');
+          }}>
           クリア
         </Button>
       </Box>
